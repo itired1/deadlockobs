@@ -1,7 +1,7 @@
 // ===================================================================
 // КОНСТАНТЫ
 // ===================================================================
-const STORAGE_KEY = 'deadlock_overlay_settings_v3';
+const STORAGE_KEY = 'deadlock_overlay_settings_v4';
 
 const DEFAULT_SETTINGS = {
     steamId: '',
@@ -10,10 +10,14 @@ const DEFAULT_SETTINGS = {
     useDemoData: true,
 };
 
-const RANK_NAMES = [
+const RANK_TIERS = [
     'Obscurus', 'Initiate', 'Seeker', 'Alchemist', 'Arcanist', 'Ritualist',
     'Emissary', 'Archon', 'Oracle', 'Phantom', 'Ascendant', 'Eternus',
 ];
+
+// Среднее число «сырых» очков на один подранг.
+// Подобрано по данным API. Если прогресс-бар неточный — крутите это значение.
+const SUBRANK_FLAT_PROGRESS_MAX = 2000;
 
 const DEMO_HEROES = [
     { id: '1', name: 'Infernus' },
@@ -76,19 +80,26 @@ function loadSettings() {
     try {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (raw) currentSettings = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
-    } catch (e) { console.warn('Load settings:', e); }
+    } catch (e) {
+        console.warn('Load settings:', e);
+    }
     return currentSettings;
 }
 
 function saveSettings(settings) {
     currentSettings = { ...settings };
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(currentSettings)); }
-    catch (e) { console.warn('Save settings:', e); }
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(currentSettings));
+    } catch (e) {
+        console.warn('Save settings:', e);
+    }
 }
 
 function resetSettings() {
     currentSettings = { ...DEFAULT_SETTINGS };
-    try { localStorage.removeItem(STORAGE_KEY); } catch (_) {}
+    try {
+        localStorage.removeItem(STORAGE_KEY);
+    } catch (_) {}
 }
 
 // ===================================================================
@@ -100,20 +111,25 @@ async function loadHeroList() {
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {
-            heroList = data.map(h => ({
-                id: String(h.id ?? h.hero_id),
-                name: h.name ?? 'Unknown',
-                image: h.images?.icon_hero_card
-                    || h.images?.icon_image_sm
-                    || `https://assets.deadlock-api.com/v2/heroes/${h.id ?? h.hero_id}/icon_sm.png`,
-            }));
+            heroList = data.map(h => {
+                const id = String(h.id ?? h.hero_id ?? '');
+                const image =
+                    (h.images && (h.images.icon_hero_card || h.images.icon_image_sm)) ||
+                    (h.images && h.images.icon_hero_card_webp) ||
+                    `https://assets.deadlock-api.com/v2/heroes/${id}/icon_sm.png`;
+                return {
+                    id,
+                    name: h.name ?? 'Unknown',
+                    image,
+                };
+            });
             console.log(`Загружено героев: ${heroList.length}`);
             return;
         }
     } catch (e) {
         console.warn('Не удалось загрузить героев с API, использую fallback:', e);
     }
-    heroList = DEMO_HEROES;
+    heroList = DEMO_HEROES.map(h => ({ ...h, image: '' }));
 }
 
 function populateHeroSelect() {
@@ -132,31 +148,53 @@ function populateHeroSelect() {
 }
 
 // ===================================================================
-// РАНГИ
+// РАНГ: ПАРСИНГ ОТВЕТА /rank
 // ===================================================================
-function getRankInfo(score) {
-    const s = Math.max(0, Math.min(71.999, score));
-    const tier = Math.floor(s / 6);
-    const sub = Math.floor(s % 6) + 1;
-    const progress = Math.round((s % 6) / 6 * 100);
+function getRankInfoFromResponse(rankData) {
+    const badge = typeof rankData.badge === 'number' ? rankData.badge : 0;
+    const tier = typeof rankData.rank === 'number' ? rankData.rank : Math.floor(badge / 6);
+    const subrank = typeof rankData.subrank === 'number' ? rankData.subrank : 1;
 
-    let nextTier = tier;
-    let nextSub = sub + 1;
-    if (nextSub > 6) { nextSub = 1; nextTier = Math.min(11, tier + 1); }
+    const lastMatch = rankData.last_match || {};
+    const flatProgress = typeof lastMatch.player_rank_final_flat_progress === 'number'
+        ? lastMatch.player_rank_final_flat_progress
+        : 0;
 
-    const tierName = RANK_NAMES[Math.min(tier, RANK_NAMES.length - 1)];
-    const nextTierName = RANK_NAMES[Math.min(nextTier, RANK_NAMES.length - 1)];
+    let tierName, rankName, nextName;
+    if (tier === 0) {
+        tierName = 'Obscurus';
+        rankName = 'Obscurus';
+        nextName = 'Initiate 1';
+    } else {
+        tierName = RANK_TIERS[Math.min(tier, RANK_TIERS.length - 1)] || `Ранг ${tier}`;
+        rankName = `${tierName} ${subrank}`;
+
+        if (subrank < 6) {
+            nextName = `${tierName} ${subrank + 1}`;
+        } else {
+            const nextTier = RANK_TIERS[Math.min(tier + 1, RANK_TIERS.length - 1)] || 'MAX';
+            nextName = `${nextTier} 1`;
+        }
+    }
+
+    let progress = 0;
+    if (flatProgress > 0) {
+        progress = Math.round((flatProgress % SUBRANK_FLAT_PROGRESS_MAX) / SUBRANK_FLAT_PROGRESS_MAX * 100);
+        progress = Math.max(0, Math.min(100, progress));
+    }
 
     return {
-        name: `${tierName} ${sub}`,
-        nextName: `${nextTierName} ${nextSub}`,
+        name: rankName,
+        nextName,
         progress,
-        badge: tierName.charAt(0),
+        badge: tier === 0 ? 'O' : (RANK_TIERS[Math.min(tier, RANK_TIERS.length - 1)] || '?').charAt(0),
+        rawBadge: badge,
+        flatProgress,
     };
 }
 
 // ===================================================================
-// STEAM ID
+// STEAM ID → ACCOUNT ID
 // ===================================================================
 function steamIdToAccountId(steamId64) {
     try {
@@ -164,7 +202,9 @@ function steamIdToAccountId(steamId64) {
         const acc = id - 76561197960265728n;
         if (acc < 0n) return null;
         return Number(acc);
-    } catch (_) { return null; }
+    } catch (_) {
+        return null;
+    }
 }
 
 // ===================================================================
@@ -172,7 +212,9 @@ function steamIdToAccountId(steamId64) {
 // ===================================================================
 function updateUI(data) {
     els.rankName.textContent = data.rank.name;
-    els.rankBadge.textContent = data.rank.badge;
+    els.rankBadge.textContent = data.rank.rawBadge != null && data.rank.rawBadge > 0
+        ? String(data.rank.rawBadge)
+        : data.rank.badge;
 
     els.rankProgressText.textContent = `${data.rank.progress}%`;
     els.rankProgressBar.style.width = `${data.rank.progress}%`;
@@ -190,12 +232,10 @@ function updateUI(data) {
     els.heroWinrate.textContent = `${data.hero.winrate}%`;
     els.heroMatches.textContent = data.hero.matches;
 
-    // Иконка героя
     if (data.hero.image) {
         els.heroIcon.src = data.hero.image;
         els.heroIcon.style.display = 'block';
         els.heroIconFallback.textContent = (data.hero.name || '?').charAt(0);
-        els.heroIcon.style.zIndex = '1';
     } else {
         els.heroIcon.style.display = 'none';
         els.heroIconFallback.textContent = (data.hero.name || '?').charAt(0);
@@ -208,7 +248,14 @@ function updateUI(data) {
 function getDemoData() {
     const hero = heroList.find(h => h.id === currentSettings.mainHero) || heroList[0] || { name: 'Haze', image: '' };
     return {
-        rank: getRankInfo(23.7), // Archon 4 → 70%
+        rank: getRankInfoFromResponse({
+            badge: 25,
+            rank: 2,
+            subrank: 5,
+            last_match: {
+                player_rank_final_flat_progress: 1370, // ~68% от 2000
+            },
+        }),
         session: { winrate: 68, matches: 12 },
         hero: {
             name: hero.name || 'Haze',
@@ -226,33 +273,27 @@ async function fetchRealData() {
     const accountId = steamIdToAccountId(currentSettings.steamId);
     if (!accountId) throw new Error('Некорректный SteamID64');
 
-    // MMR-история
-    const mmrRes = await fetch(`https://api.deadlock-api.com/v1/players/${accountId}/mmr-history`);
-    if (!mmrRes.ok) throw new Error('Ошибка MMR: ' + mmrRes.status);
-    const mmrHistory = await mmrRes.json();
-    if (!Array.isArray(mmrHistory) || mmrHistory.length === 0) throw new Error('Пустая MMR-история');
+    // 1) Ранг через /rank
+    const rankRes = await fetch(`https://api.deadlock-api.com/v1/players/${accountId}/rank`);
+    if (!rankRes.ok) throw new Error('Ошибка ранга: HTTP ' + rankRes.status);
+    const rankData = await rankRes.json();
+    const rank = getRankInfoFromResponse(rankData);
 
-    const latest = mmrHistory[mmrHistory.length - 1];
-    const score = typeof latest.player_score === 'number' ? latest.player_score : 0;
-    const rank = getRankInfo(score);
-
-    // Статистика героев
+    // 2) Статистика героев
     const heroRes = await fetch(`https://api.deadlock-api.com/v1/players/${accountId}/hero-stats`);
-    if (!heroRes.ok) throw new Error('Ошибка статистики героев: ' + heroRes.status);
+    if (!heroRes.ok) throw new Error('Ошибка статистики героев: HTTP ' + heroRes.status);
     const heroStats = await heroRes.json();
     if (!Array.isArray(heroStats)) throw new Error('Некорректный формат hero-stats');
 
-    // Выбор героя
     let chosenHeroEntry;
     if (currentSettings.mainHero === 'auto') {
         chosenHeroEntry = [...heroStats].sort((a, b) => (b.matches || 0) - (a.matches || 0))[0];
     } else {
-        chosenHeroEntry = heroStats.find(h => String(h.hero_id ?? h.heroId) === currentSettings.mainHero);
+        chosenHeroEntry = heroStats.find(
+            h => String(h.hero_id ?? h.heroId) === currentSettings.mainHero
+        );
     }
-
-    if (!chosenHeroEntry) {
-        chosenHeroEntry = heroStats[0] || { matches: 0, wins: 0 };
-    }
+    if (!chosenHeroEntry) chosenHeroEntry = heroStats[0] || { matches: 0, wins: 0 };
 
     const heroIdStr = String(chosenHeroEntry.hero_id ?? chosenHeroEntry.heroId ?? '');
     const heroMeta = heroList.find(h => h.id === heroIdStr) || {
@@ -263,7 +304,7 @@ async function fetchRealData() {
         ? Math.round((chosenHeroEntry.wins / chosenHeroEntry.matches) * 100)
         : 0;
 
-    // История матчей за сегодня
+    // 3) Матчи за сегодня
     const matchRes = await fetch(`https://api.deadlock-api.com/v1/players/${accountId}/match-history`);
     const matches = matchRes.ok ? await matchRes.json() : [];
     const todayStart = Math.floor(new Date(
@@ -273,7 +314,9 @@ async function fetchRealData() {
     const todayMatches = Array.isArray(matches)
         ? matches.filter(m => (m.start_time || m.match_start_time || 0) >= todayStart)
         : [];
-    const wins = todayMatches.filter(m => m.win === true || m.result === 'win' || m.result === 'Win').length;
+    const wins = todayMatches.filter(
+        m => m.win === true || m.result === 'win' || m.result === 'Win'
+    ).length;
     const sessionWinrate = todayMatches.length
         ? Math.round((wins / todayMatches.length) * 100)
         : 0;
