@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deadlock Stream Overlay</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&family=Colus&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="overlay-container" id="overlay">
+        <button class="settings-btn" id="settings-btn" title="Настройки (S)">⚙</button>
+
+        <div class="main-card glass-panel">
+            <div class="rank-section">
+                <div class="rank-badge" id="rank-badge">--</div>
+                <div class="rank-info">
+                    <span class="label">Текущий ранг</span>
+                    <span id="rank-name" class="value rank-name">--</span>
+                </div>
+            </div>
+
+            <div class="rank-progress-section">
+                <div class="rank-progress-label">
+                    <span class="label">До следующего ранга</span>
+                    <span id="rank-progress-text" class="progress-text">--%</span>
+                </div>
+                <div class="progress-bar-bg rank-bar-bg">
+                    <div id="rank-progress-bar" class="progress-bar-fill rank-bar-fill" style="width: 0%;"></div>
+                </div>
+                <div class="rank-next-name">
+                    <span id="rank-next-text" class="next-rank">→ --</span>
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="session-stats">
+                <div class="stat-item">
+                    <span class="label">Винрейт сегодня</span>
+                    <div class="stat-value-group">
+                        <span id="session-winrate" class="value highlight">--%</span>
+                        <div class="progress-bar-bg">
+                            <div id="session-winrate-bar" class="progress-bar-fill" style="width: 0%;"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="stat-item">
+                    <span class="label">Матчей за сегодня</span>
+                    <span id="session-matches" class="value">--</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="hero-card glass-panel">
+            <div class="hero-header">
+                <div class="hero-icon-wrap">
+                    <img id="hero-icon" class="hero-icon" src="" alt="Hero" onerror="this.style.display='none'">
+                    <div id="hero-icon-fallback" class="hero-icon-fallback">?</div>
+                </div>
+                <div class="hero-title">
+                    <span class="label" id="hero-label">Основной герой</span>
+                    <span id="hero-name" class="value">--</span>
+                </div>
+            </div>
+            <div class="hero-stats">
+                <div class="stat-item">
+                    <span class="label">Винрейт</span>
+                    <span id="hero-winrate" class="value highlight">--%</span>
+                </div>
+                <div class="stat-item">
+                    <span class="label">Матчей</span>
+                    <span id="hero-matches" class="value">--</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="update-indicator" id="update-indicator">Обновление...</div>
+    </div>
+
+    <div class="settings-modal" id="settings-modal">
+        <div class="settings-panel">
+            <h2>Настройки оверлея</h2>
+
+            <div class="setting-group">
+                <label for="input-steamid">SteamID64</label>
+                <input type="text" id="input-steamid" placeholder="76561197960287930" autocomplete="off">
+                <small>Найти можно на <a href="https://steamid.io" target="_blank" rel="noopener">steamid.io</a></small>
+            </div>
+
+            <div class="setting-group">
+                <label for="input-hero">Основной герой</label>
+                <select id="input-hero"></select>
+            </div>
+
+            <div class="setting-group">
+                <label for="input-interval">Интервал обновления (сек)</label>
+                <input type="number" id="input-interval" min="15" max="600" value="60">
+            </div>
+
+            <div class="setting-group checkbox-group">
+                <label>
+                    <input type="checkbox" id="input-demo">
+                    Демо-режим (тестовые данные)
+                </label>
+            </div>
+
+            <div class="settings-actions">
+                <button class="btn btn-primary" id="settings-save">Сохранить</button>
+                <button class="btn btn-secondary" id="settings-reset">Сбросить</button>
+                <button class="btn btn-close" id="settings-close">Закрыть</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
